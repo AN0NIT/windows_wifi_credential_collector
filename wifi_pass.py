@@ -1,51 +1,54 @@
-import os,sys
+import subprocess as sb
+import re
+import json, random
 
-if os.name == 'nt':
-    print("[+] Gathering SSID's saved in the system")
-else:
-    print("This script runs only on Windows!")
-    sys.exit()
+# Function which parses out the password from the output of the netsh command
+def output2pass(buffer):
+    buffer = buffer.decode().rstrip()
+    try:
+        passwd = re.findall('Key Content            : (.*)',buffer)[0]
+    except IndexError:
+        passwd = re.findall('Key Content            : (.*)',buffer)
+    if passwd == []:
+        passwd = "NULL"
+    return passwd.rstrip()
 
-os.system("echo "" > creds.txt")
-os.system("netsh wlan show profiles > pass.txt")
+# To check if the OS is windows
+if sb.os.name != 'nt':
+	exit()
+	
+# Get the output of the netsh command into ssid
+ssid = sb.check_output(['netsh','wlan','show','profiles'], shell=True )
+ssid  = ssid.decode().rstrip()
 
+# To remove the unwanted headers
+index = ssid.find('All User Profile     :')
+ssid = ssid[index:]
 
-fhandle = open("pass.txt","r")
+# Get the raw ssids
+ssids_raw = re.split('All User Profile     :',ssid)
+ssids = []
+for line in ssids_raw:
+    if line == ' ' or line == '':
+        continue
+    else:
+        ssids.append(line.strip())
+ 
+# To store the password along with its ssid  as a dictionary
+credentials = {}
+for ssid in ssids:
+    try:
+        output = sb.check_output(['netsh','wlan','show','profile',f'{ssid}','key=','clear'], shell=True )
+    except:
+        continue
+    passwd = output2pass(output)
+    credentials[ssid] = passwd
+    # print(f'SSID:{ssid} PASSWORD:{passwd}')
 
-for words in fhandle:
+# To print the creds in json format
+# print(json.dumps(credentials, sort_keys=True, indent=3))
 
-    if "All" in words:
-        line = words.split()
-        user = line[4]
-        os.system(f"netsh wlan show profile {user} key=clear >> paste.txt")
-
-fhandle.close()
-
-fh = open("paste.txt","r")
-fhand = open("creds.txt","w")
-
-print("[+] Gathering passwords")
-
-for w in fh:
-    if "Name" in w or "Content" in w or "Absent" in w:
-        line = w.split()
-        if "Name" in line:
-            user = line[2]
-            fhand.write(f"    SSID:{user}")
-            fhand.write("\n")
-        elif "Content" in line:
-            passwd = line[3]
-            fhand.write(f"password:{passwd}")
-            fhand.write("\n\n")
-            continue
-        elif "Absent" in line:
-            fhand.write("password:-NA-")
-            fhand.write("\n\n")
-            continue
-
-fhand.close()
-fh.close()
-
-print("[!] The credentials are saved in:'creds.txt'")
-os.system("del pass.txt")
-os.system("del paste.txt")
+# Outputs in a json file with random filename.
+filename = str(random.randint(1000,10000))+'.json'
+with open(filename, 'w') as f:
+    f.write(json.dumps(credentials, sort_keys=True, indent=3))
